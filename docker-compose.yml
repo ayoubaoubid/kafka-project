@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   kafka-network:
     driver: bridge
@@ -161,7 +159,7 @@ services:
         condition: service_healthy    # ✅ healthy au lieu de started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      HDFS_URL: hdfs://namenode:8020
+      HDFS_WEB_URL: http://namenode:9870
       CONSUMER_SCRIPT: consumer_hdfs.py
     restart: on-failure
 

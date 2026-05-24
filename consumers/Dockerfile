@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-RUN pip install kafka-python hdfs pandas
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-CMD ["python", "${CONSUMER_SCRIPT}"]
+CMD ["sh", "-c", "python \"$CONSUMER_SCRIPT\""]
