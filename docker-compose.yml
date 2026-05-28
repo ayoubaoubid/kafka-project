@@ -9,8 +9,6 @@ volumes:
   kafka_data:
 
 services:
-
-  # ── ZOOKEEPER ──────────────────────────────────────────────────────────────
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -29,7 +27,6 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── KAFKA BROKER ───────────────────────────────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
@@ -62,7 +59,6 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── KAFKA UI ───────────────────────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -79,7 +75,6 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     restart: always
 
-  # ── HADOOP NAMENODE ────────────────────────────────────────────────────────
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
@@ -89,7 +84,7 @@ services:
       - "9870:9870"
       - "8020:8020"
     environment:
-      - CLUSTER_NAME=ecommerce-cluster    # ✅ format = requis
+      - CLUSTER_NAME=ecommerce-cluster
     env_file:
       - ./config/hadoop.env
     volumes:
@@ -101,7 +96,6 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── HADOOP DATANODE ────────────────────────────────────────────────────────
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     container_name: datanode
@@ -117,7 +111,6 @@ services:
       - hadoop_datanode:/hadoop/dfs/data
     restart: on-failure
 
-  # ── PRODUCER PYTHON ────────────────────────────────────────────────────────
   producer:
     build: ./producer
     container_name: producer
@@ -132,7 +125,6 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     restart: on-failure
 
-  # ── CONSUMER STATISTIQUES ─────────────────────────────────────────────────
   consumer-stats:
     build: ./consumers
     container_name: consumer-stats
@@ -146,7 +138,6 @@ services:
       CONSUMER_SCRIPT: consumer_stats.py
     restart: on-failure
 
-  # ── CONSUMER HDFS ─────────────────────────────────────────────────────────
   consumer-hdfs:
     build: ./consumers
     container_name: consumer-hdfs
@@ -156,14 +147,29 @@ services:
       kafka:
         condition: service_healthy
       namenode:
-        condition: service_healthy    # ✅ healthy au lieu de started
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       HDFS_WEB_URL: http://namenode:9870
       CONSUMER_SCRIPT: consumer_hdfs.py
     restart: on-failure
 
-  # ── DÉTECTEUR DE FRAUDE ───────────────────────────────────────────────────
+  fraud-trainer:
+    build: ./consumers
+    container_name: fraud-trainer
+    networks:
+      - kafka-network
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./reports:/app/reports
+    environment:
+      CONSUMER_SCRIPT: train_fraud_model.py
+      DATASET_PATH: /app/data/ecommerce.csv
+      MODEL_OUTPUT_PATH: /app/models/fraud_detection_pipeline.pkl
+      REPORT_DIR: /app/reports
+    restart: "no"
+
   fraud-detector:
     build: ./consumers
     container_name: fraud-detector
@@ -172,7 +178,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      fraud-trainer:
+        condition: service_completed_successfully
+    volumes:
+      - ./models:/app/models
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONSUMER_SCRIPT: fraud_detector.py
+      MODEL_OUTPUT_PATH: /app/models/fraud_detection_pipeline.pkl
     restart: on-failure
