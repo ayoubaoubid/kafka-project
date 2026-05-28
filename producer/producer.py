@@ -13,15 +13,24 @@ DATASET_PATH = os.getenv("DATASET_PATH", "/app/data/ecommerce.csv")
 
 
 def load_dataset(path):
+    def read_csv_with_fallback(source):
+        for encoding in ("utf-8", "latin-1", "cp1252"):
+            try:
+                return pd.read_csv(source, encoding=encoding)
+            except UnicodeDecodeError:
+                if hasattr(source, "seek"):
+                    source.seek(0)
+        raise UnicodeDecodeError("csv", b"", 0, 1, "Could not decode dataset with supported encodings")
+
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
             csv_names = [name for name in archive.namelist() if name.endswith(".csv")]
             if not csv_names:
                 raise FileNotFoundError("No CSV file found inside the zip archive")
             with archive.open(csv_names[0]) as csv_file:
-                return pd.read_csv(csv_file)
+                return read_csv_with_fallback(csv_file)
 
-    return pd.read_csv(path)
+    return read_csv_with_fallback(path)
 
 
 def create_producer():
