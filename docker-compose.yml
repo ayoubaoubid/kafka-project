@@ -1,0 +1,189 @@
+networks:
+  kafka-network:
+    driver: bridge
+    name: kafka-ecommerce-net
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  kafka_data:
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    networks:
+      - kafka-network
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    networks:
+      - kafka-network
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    networks:
+      - kafka-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ecommerce-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    restart: always
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    networks:
+      - kafka-network
+    ports:
+      - "9870:9870"
+      - "8020:8020"
+    environment:
+      - CLUSTER_NAME=ecommerce-cluster
+    env_file:
+      - ./config/hadoop.env
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9870 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    networks:
+      - kafka-network
+    depends_on:
+      - namenode
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./config/hadoop.env
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    restart: on-failure
+
+  producer:
+    build: ./producer
+    container_name: producer
+    networks:
+      - kafka-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: on-failure
+
+  consumer-stats:
+    build: ./consumers
+    container_name: consumer-stats
+    networks:
+      - kafka-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CONSUMER_SCRIPT: consumer_stats.py
+    restart: on-failure
+
+  consumer-hdfs:
+    build: ./consumers
+    container_name: consumer-hdfs
+    networks:
+      - kafka-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      namenode:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      HDFS_WEB_URL: http://namenode:9870
+      CONSUMER_SCRIPT: consumer_hdfs.py
+    restart: on-failure
+
+  fraud-trainer:
+    build: ./consumers
+    container_name: fraud-trainer
+    networks:
+      - kafka-network
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./reports:/app/reports
+    environment:
+      CONSUMER_SCRIPT: train_fraud_model.py
+      DATASET_PATH: /app/data/ecommerce.csv
+      MODEL_OUTPUT_PATH: /app/models/fraud_detection_pipeline.pkl
+      REPORT_DIR: /app/reports
+    restart: "no"
+
+  fraud-detector:
+    build: ./consumers
+    container_name: fraud-detector
+    networks:
+      - kafka-network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      fraud-trainer:
+        condition: service_completed_successfully
+    volumes:
+      - ./models:/app/models
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CONSUMER_SCRIPT: fraud_detector.py
+      MODEL_OUTPUT_PATH: /app/models/fraud_detection_pipeline.pkl
+    restart: on-failure
