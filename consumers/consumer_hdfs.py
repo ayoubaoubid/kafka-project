@@ -22,8 +22,15 @@ consumer = KafkaConsumer(
 
 hdfs_client = InsecureClient(HDFS_WEB_URL, user="root")
 hdfs_client.makedirs(os.path.dirname(HDFS_OUTPUT_PATH))
+file_exists = hdfs_client.status(HDFS_OUTPUT_PATH, strict=False) is not None
 
 for message in consumer:
-    with hdfs_client.write(HDFS_OUTPUT_PATH, append=True, encoding="utf-8") as writer:
+    with hdfs_client.write(
+        HDFS_OUTPUT_PATH,
+        append=file_exists,
+        overwrite=not file_exists,
+        encoding="utf-8",
+    ) as writer:
         writer.write(json.dumps(message.value) + "\n")
+    file_exists = True
     print(f"Saved order to HDFS: {message.value.get('InvoiceNo', '')}")
