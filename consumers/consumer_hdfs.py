@@ -49,7 +49,6 @@ consumer = KafkaConsumer(
     value_deserializer=lambda value: json.loads(value.decode("utf-8")),
 )
 
-<<<<<<< HEAD
 print(f"HDFS Consumer listening on topic '{TOPIC_NAME}' → writing to {HDFS_OUTPUT_PATH}")
 
 # --- Main loop ---
@@ -67,19 +66,3 @@ for message in consumer:
             writer.write(payload)
         print(f"Flushed {len(buffer)} orders to HDFS (last InvoiceNo: {order.get('InvoiceNo', '')})")
         buffer.clear()
-=======
-hdfs_client = InsecureClient(HDFS_WEB_URL, user="root")
-hdfs_client.makedirs(os.path.dirname(HDFS_OUTPUT_PATH))
-file_exists = hdfs_client.status(HDFS_OUTPUT_PATH, strict=False) is not None
-
-for message in consumer:
-    with hdfs_client.write(
-        HDFS_OUTPUT_PATH,
-        append=file_exists,
-        overwrite=not file_exists,
-        encoding="utf-8",
-    ) as writer:
-        writer.write(json.dumps(message.value) + "\n")
-    file_exists = True
-    print(f"Saved order to HDFS: {message.value.get('InvoiceNo', '')}")
->>>>>>> ec7ece4932ec6b92526124a1b2e0c5c263b73040

@@ -332,4 +332,4 @@ git push origin feature/nouvelle-feature
 
 # 📜 Licence
 
-Ce projet est sous licence MIT.
+Ce projet est sous licence Iasd.
