@@ -38,6 +38,7 @@ def create_producer():
         try:
             return KafkaProducer(
                 bootstrap_servers=KAFKA_SERVER,
+                key_serializer=lambda key: str(key).encode("utf-8"),
                 value_serializer=lambda value: json.dumps(value).encode("utf-8"),
             )
         except Exception as exc:
@@ -64,7 +65,7 @@ for _, row in df.iterrows():
         "Country": str(row.get("Country", "")),
     }
 
-    producer.send(TOPIC_NAME, value=data)
+    producer.send(TOPIC_NAME, key=data["InvoiceNo"], value=data)
     print(f"Message Sent : {data}")
     time.sleep(1)
 
